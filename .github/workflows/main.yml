@@ -1,26 +1,21 @@
-name: 'Module 2: Build et Push de l'image Docker (OIDC)'
+name: 'Module 2: Build et Push de limage Docker (OIDC)'
 
-# Déclencheur (inchangé)
-on:
-  push:
-    branches: [ "main" ]
-
-# ÉTAPE CLÉ 1 : Donner les permissions au pipeline
+# CETTE PARTIE EST CELLE QUI MANQUE SUR GITHUB
 permissions:
   id-token: write   # Permet au pipeline de générer un token OIDC
   contents: read    # Permet au pipeline de lire le code (checkout)
 
+on:
+  push:
+    branches: [ "main" ]
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
     steps:
-    # Étape 1 : Récupérer notre code (inchangée)
     - name: 'Checkout du code'
       uses: actions/checkout@v3
 
-    # Étape 2 : Connexion à Azure via OIDC (SANS SECRET)
-    # Il utilise les secrets que vous avez DÉJÀ (sauf le 'clientSecret')
     - name: 'Connexion à Azure (OIDC)'
       uses: azure/login@v1
       with:
@@ -28,15 +23,12 @@ jobs:
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    # Étape 3 : Connexion à Azure Container Registry (ACR)
-    # Il réutilise la connexion OIDC de l'étape 2. Pas besoin de login/pass.
     - name: 'Connexion à Azure Container Registry (ACR)'
       uses: azure/docker-login@v1
       with:
         login-server: ${{ vars.ACR_LOGIN_SERVER }}
 
-    # Étape 4 : Build et Push de l'image (inchangée)
-    - name: 'Build et Push'
+    - name: 'Build et Push de limage'
       uses: docker/build-push-action@v4
       with:
         context: ./module2
