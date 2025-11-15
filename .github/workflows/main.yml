@@ -1,44 +1,41 @@
-# Nom de notre workflow
 name: 'Module 2: Build et Push de limage Docker'
 
-# Déclencheur : s'exécute à chaque 'push' sur la branche 'main'
 on:
   push:
     branches: [ "main" ]
 
-# Les Tâches (Jobs) à exécuter
 jobs:
   build-and-push:
-    # La machine virtuelle gratuite que GitHub va utiliser
     runs-on: ubuntu-latest
 
     steps:
-    # Étape 1 : Récupérer notre code (git checkout)
+    # Étape 1 : Récupérer notre code (inchangée)
     - name: 'Checkout du code'
       uses: actions/checkout@v3
 
-    # Étape 2 : Connexion à Azure
-    # (Utilise le "passeport" que nous avons mis en secret)
+    # Étape 2 : Connexion à Azure (Nouvelle méthode)
+    # On fournit les 4 secrets individuellement
     - name: 'Connexion à Azure'
       uses: azure/login@v1
       with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    # Étape 3 : Connexion à l'entrepôt ACR
-    # (Nécessaire pour que Docker puisse pousser)
+    # Étape 3 : Connexion à Azure Container Registry (ACR) (Nouvelle méthode)
+    # On lui donne explicitement le "username" et "password"
     - name: 'Connexion à Azure Container Registry (ACR)'
       uses: azure/docker-login@v1
       with:
-        # Récupérez votre "Login Server" sur le portail Azure
-        # (ex: acrformationsreXXXX.azurecr.io)
-        login-server: acrformationsred5fc17d4.azurecr.io
+        login-server: ${{ vars.ACR_LOGIN_SERVER }} # <-- On va créer cette variable
+        username: ${{ secrets.AZURE_CLIENT_ID }}
+        password: ${{ secrets.AZURE_CLIENT_SECRET }}
 
-    # Étape 4 : Build et Push de l'image
+    # Étape 4 : Build et Push de l'image (Mise à jour)
     - name: 'Build et Push'
       uses: docker/build-push-action@v4
       with:
-        # Le dossier où se trouve le Dockerfile
         context: ./module2
-        # Le nom de l'image dans ACR
         push: true
-        tags: acrformationsred5fc17d4.azurecr.io/formation-sre-app:v1
+        tags: ${{ vars.ACR_LOGIN_SERVER }}/formation-sre-app:v1
