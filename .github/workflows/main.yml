@@ -1,8 +1,14 @@
-name: 'Module 2: Build et Push de limage Docker'
+name: 'Module 2: Build et Push de l'image Docker (OIDC)'
 
+# Déclencheur (inchangé)
 on:
   push:
     branches: [ "main" ]
+
+# ÉTAPE CLÉ 1 : Donner les permissions au pipeline
+permissions:
+  id-token: write   # Permet au pipeline de générer un token OIDC
+  contents: read    # Permet au pipeline de lire le code (checkout)
 
 jobs:
   build-and-push:
@@ -13,26 +19,23 @@ jobs:
     - name: 'Checkout du code'
       uses: actions/checkout@v3
 
-    # Étape 2 : Connexion à Azure (Nouvelle méthode)
-    # On fournit les 4 secrets individuellement
-    - name: 'Connexion à Azure'
+    # Étape 2 : Connexion à Azure via OIDC (SANS SECRET)
+    # Il utilise les secrets que vous avez DÉJÀ (sauf le 'clientSecret')
+    - name: 'Connexion à Azure (OIDC)'
       uses: azure/login@v1
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    # Étape 3 : Connexion à Azure Container Registry (ACR) (Nouvelle méthode)
-    # On lui donne explicitement le "username" et "password"
+    # Étape 3 : Connexion à Azure Container Registry (ACR)
+    # Il réutilise la connexion OIDC de l'étape 2. Pas besoin de login/pass.
     - name: 'Connexion à Azure Container Registry (ACR)'
       uses: azure/docker-login@v1
       with:
-        login-server: ${{ vars.ACR_LOGIN_SERVER }} # <-- On va créer cette variable
-        username: ${{ secrets.AZURE_CLIENT_ID }}
-        password: ${{ secrets.AZURE_CLIENT_SECRET }}
+        login-server: ${{ vars.ACR_LOGIN_SERVER }}
 
-    # Étape 4 : Build et Push de l'image (Mise à jour)
+    # Étape 4 : Build et Push de l'image (inchangée)
     - name: 'Build et Push'
       uses: docker/build-push-action@v4
       with:
