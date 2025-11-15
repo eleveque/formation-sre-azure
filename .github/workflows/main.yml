@@ -1,0 +1,44 @@
+# Nom de notre workflow
+name: 'Module 2: Build et Push de limage Docker'
+
+# Déclencheur : s'exécute à chaque 'push' sur la branche 'main'
+on:
+  push:
+    branches: [ "main" ]
+
+# Les Tâches (Jobs) à exécuter
+jobs:
+  build-and-push:
+    # La machine virtuelle gratuite que GitHub va utiliser
+    runs-on: ubuntu-latest
+
+    steps:
+    # Étape 1 : Récupérer notre code (git checkout)
+    - name: 'Checkout du code'
+      uses: actions/checkout@v3
+
+    # Étape 2 : Connexion à Azure
+    # (Utilise le "passeport" que nous avons mis en secret)
+    - name: 'Connexion à Azure'
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    # Étape 3 : Connexion à l'entrepôt ACR
+    # (Nécessaire pour que Docker puisse pousser)
+    - name: 'Connexion à Azure Container Registry (ACR)'
+      uses: azure/docker-login@v1
+      with:
+        # Récupérez votre "Login Server" sur le portail Azure
+        # (ex: acrformationsreXXXX.azurecr.io)
+        login-server: acrformationsred5fc17d4.azurecr.io
+
+    # Étape 4 : Build et Push de l'image
+    - name: 'Build et Push'
+      uses: docker/build-push-action@v4
+      with:
+        # Le dossier où se trouve le Dockerfile
+        context: ./module2
+        # Le nom de l'image dans ACR
+        push: true
+        tags: acrformationsred5fc17d4.azurecr.io/formation-sre-app:v1

@@ -1,0 +1,17 @@
+# Fichiers d'état et de secrets Terraform
+*.tfstate
+*.tfstate.*.backup
+*.tfvars
+
+# Dossiers des plugins Terraform
+.terraform/
+
+# Fichiers temporaires Terraform
+.terraform.lock.hcl
+
+# Fichiers Python
+__pycache__/
+*.pyc
+
+# Fichiers système
+.DS_Store
