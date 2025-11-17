@@ -71,5 +71,5 @@ resource "azurerm_container_registry" "acr_formation" {
 
   # --- Paramètres "Zéro Euro" ---
   sku                      = "Basic"  # Le plan "Basic" est inclus dans le Free Tier 12 mois.
-  admin_enabled            = true     # On l'active pour se connecter facilement
+  admin_enabled            = false     # On l'active pour se connecter facilement
 }
