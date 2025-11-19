@@ -1,0 +1,14 @@
+# Nombre de copies de l'app
+replicaCount: 2
+
+# Configuration de l'image
+image:
+  repository: acrformationsread412413.azurecr.io/formation-sre-app # (Mettez votre URL ACR ici sans le tag !)
+  tag: "v1"
+  pullPolicy: Always
+
+# Configuration du Secret Key Vault
+keyVault:
+  name: kv-sre-c334bb99
+  tenantId: 6b007274-ccb8-4f81-a19a-ff0c2659507a
+  userAssignedIdentityID: ca732195-e4dc-4fc0-aa33-df11c7bb803b

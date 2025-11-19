@@ -1,0 +1,72 @@
+# 1. Le Déploiement (L'application elle-même)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-app-deployment
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: sre-app
+  template:
+    metadata:
+      labels:
+        app: sre-app
+    spec:
+      containers:            # <--- Niveau 1
+      - name: sre-app-container
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        ports:
+        - containerPort: 5000
+        
+        # volumeMounts est DANS le conteneur (Niveau 2)
+        volumeMounts:        
+        - name: secrets-store-inline
+          mountPath: "/mnt/secrets"
+          readOnly: true
+
+      # STOP ! On revient au Niveau 1
+      # volumes doit être aligné avec 'containers', pas 'volumeMounts'
+      volumes:               # <--- Regardez, il est aligné avec 'containers' !
+      - name: secrets-store-inline
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: "azure-kv-db-secret"
+---
+# 2. Le Service (Maintenant "Privé")
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-app-service
+spec:
+  type: ClusterIP  # <-- C'est le changement clé ! Plus de LoadBalancer.
+  ports:
+  - port: 80
+    targetPort: 5000
+  selector:
+    app: sre-app
+
+---
+# 3. L'Ingress (La règle de routage pour NGINX)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sre-app-ingress
+  annotations:
+    # On dit à K8s : "C'est pour Nginx"
+    kubernetes.io/ingress.class: nginx
+    # Petite réécriture pour que l'app reçoive bien la racine "/"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: sre-app-service
+            port:
+              number: 80
