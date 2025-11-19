@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sre-app-gitops
+  namespace: argocd  # L'application doit être créée dans le namespace d'ArgoCD
+spec:
+  project: default
+
+  # 1. La Source (Où est la vérité ?)
+  source:
+    repoURL: https://github.com/eleveque/formation-sre-azure.git  # VOTRE URL GITHUB !
+    targetRevision: main  # La branche à surveiller
+    path: module3  # Le dossier où se trouve deployment.yaml
+
+  # 2. La Destination (Où déployer ?)
+  destination:
+    server: https://kubernetes.default.svc  # Le cluster local (lui-même)
+    namespace: default  # Là où on veut que l'app tourne
+
+  # 3. La Politique (Pilote Automatique)
+  syncPolicy:
+    automated: 
+      prune: true      # Si on supprime un fichier dans Git, supprime-le du cluster
+      selfHeal: true   # Si quelqu'un touche au cluster à la main, annule sa modif

@@ -14,6 +14,14 @@ terraform {
       source  = "hashicorp/random"
       version = "~>3.0"
     }
+    github = {
+      source  = "integrations/github"
+      version = "~>5.0" # Une version récente
+    }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = "~>2.0"
+    }
   }
 }
 
@@ -24,6 +32,15 @@ terraform {
 provider "azurerm" {
   # Pas besoin de clés ici, il utilisera votre 'az login' !
   features {}
+}
+
+provider "github" {
+  # Le nom de votre organisation/utilisateur GitHub
+  owner = "eleveque" 
+}
+
+provider "azuread" {
+  # Pas besoin de config spéciale, il utilise votre connexion Azure actuelle
 }
 
 # -----------------------------------------------------------------
@@ -72,4 +89,159 @@ resource "azurerm_container_registry" "acr_formation" {
   # --- Paramètres "Zéro Euro" ---
   sku                      = "Basic"  # Le plan "Basic" est inclus dans le Free Tier 12 mois.
   admin_enabled            = false     # On l'active pour se connecter facilement
+}
+
+
+# -----------------------------------------------------------------
+# Bloc 5 : Le Cluster Kubernetes (AKS)
+# -----------------------------------------------------------------
+
+# On crée une "Identité" (un "robot") pour notre cluster K8s
+# Il l'utilisera pour parler aux autres services Azure (comme l'ACR)
+resource "azurerm_user_assigned_identity" "aks_identity" {
+  name                = "aks-identity-sre"
+  resource_group_name = azurerm_resource_group.rg_formation.name
+  location            = azurerm_resource_group.rg_formation.location
+}
+
+resource "random_uuid" "role_uuid" {
+}
+
+resource "random_uuid" "role_uuid_mi_op" {
+}
+
+resource "azurerm_log_analytics_workspace" "logs_formation" {
+  name                = "logs-sre-formation"
+  location            = azurerm_resource_group.rg_formation.location
+  resource_group_name = azurerm_resource_group.rg_formation.name
+  sku                 = "PerGB2018" # Le plan standard "Pay-as-you-go"
+  retention_in_days   = 30
+}
+
+# On donne à ce "robot" la permission "AcrPull" (tirer les images)
+# sur notre entrepôt ACR.
+resource "azurerm_role_assignment" "aks_pull_acr" {
+  # On utilise 'guid' pour un nom de rôle unique
+  name                 = random_uuid.role_uuid.result
+  
+  scope                = azurerm_container_registry.acr_formation.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_user_assigned_identity.aks_identity.principal_id
+}
+
+resource "azurerm_role_assignment" "aks_manage_identity" {
+  name                 = random_uuid.role_uuid_mi_op.result
+  
+  # L'Ouvrier (la ressource sur laquelle on donne la permission)
+  scope                = azurerm_user_assigned_identity.aks_identity.id 
+  
+  # La permission
+  role_definition_name = "Managed Identity Operator" 
+  
+  # Le Cerveau (celui qui reçoit la permission)
+  principal_id         = azurerm_user_assigned_identity.aks_identity.principal_id
+}
+
+# Enfin, on déclare le cluster Kubernetes lui-même
+resource "azurerm_kubernetes_cluster" "aks_formation" {
+  name                = "aks-formation-sre"
+  resource_group_name = azurerm_resource_group.rg_formation.name
+  location            = azurerm_resource_group.rg_formation.location
+  dns_prefix          = "aks-sre-formation"
+
+  depends_on = [
+    azurerm_role_assignment.aks_pull_acr
+  ]
+
+  # On définit le "pool" de VMs (les serveurs) qui vont 
+  # exécuter nos conteneurs.
+  default_node_pool {
+    name       = "default"
+    node_count = 1                # On n'en prend qu'une pour limiter les coûts
+    vm_size    = "Standard_B2s"   # Une taille minimale pour K8s
+  }
+
+  oms_agent {
+    log_analytics_workspace_id = azurerm_log_analytics_workspace.logs_formation.id
+  }
+  
+  # On assigne notre "robot" au cluster
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.aks_identity.id]
+  }
+
+  kubelet_identity {
+    client_id                 = azurerm_user_assigned_identity.aks_identity.client_id
+    object_id                 = azurerm_user_assigned_identity.aks_identity.principal_id
+    user_assigned_identity_id = azurerm_user_assigned_identity.aks_identity.id
+  }
+}
+
+# -----------------------------------------------------------------
+# Bloc 8 : Automatisation GitHub (Module 5)
+# -----------------------------------------------------------------
+resource "github_actions_variable" "acr_url" {
+  # Nom du dépôt
+  repository    = "formation-sre-azure"
+  
+  # ATTENTION : C'est 'variable_name', pas 'name' !
+  variable_name = "ACR_LOGIN_SERVER"
+  
+  # La valeur (l'URL de l'ACR)
+  value         = azurerm_container_registry.acr_formation.login_server
+}
+
+
+# 1. On récupère la config actuelle (pour connaître votre Tenant ID)
+data "azurerm_client_config" "current" {}
+
+# 2. On crée l'Application (La définition du robot)
+resource "azuread_application" "github_app" {
+  display_name = "github-actions-sre-terraform"
+}
+
+# 3. On crée le Service Principal (L'instance du robot)
+resource "azuread_service_principal" "github_sp" {
+  client_id = azuread_application.github_app.client_id
+}
+
+# 4. On configure la Fédération OIDC (La confiance avec GitHub)
+resource "azuread_application_federated_identity_credential" "github_oidc" {
+  application_id = azuread_application.github_app.id
+  display_name   = "github-actions-trust"
+  description    = "Confiance OIDC gérée par Terraform"
+  audiences      = ["api://AzureADTokenExchange"]
+  issuer         = "https://token.actions.githubusercontent.com"
+  # ATTENTION : Remplacez par votre user/repo exact !
+  subject        = "repo:eleveque/formation-sre-azure:ref:refs/heads/main"
+}
+
+# 5. On donne la permission AcrPush au NOUVEAU robot
+resource "azurerm_role_assignment" "github_push_acr" {
+  role_definition_name = "AcrPush"
+  scope                = azurerm_container_registry.acr_formation.id
+  # On utilise l'ID du robot que Terraform vient de créer
+  principal_id         = azuread_service_principal.github_sp.object_id
+}
+
+# 6. On envoie le NOUVEAU Client ID directement dans les secrets GitHub !
+resource "github_actions_secret" "client_id" {
+  repository      = "formation-sre-azure"
+  secret_name     = "AZURE_CLIENT_ID"
+  # C'est ici que la boucle est bouclée : Terraform connaît l'ID, il l'envoie.
+  plaintext_value = azuread_application.github_app.client_id
+}
+
+# 7. (Bonus) On met à jour les autres secrets pour être sûr
+resource "github_actions_secret" "subscription_id" {
+  repository      = "formation-sre-azure"
+  secret_name     = "AZURE_SUBSCRIPTION_ID"
+  plaintext_value = data.azurerm_client_config.current.subscription_id
+}
+
+resource "github_actions_secret" "tenant_id" {
+  repository      = "formation-sre-azure"
+  secret_name     = "AZURE_TENANT_ID"
+  plaintext_value = data.azurerm_client_config.current.tenant_id
 }
